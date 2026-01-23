@@ -93,7 +93,7 @@ function initLicenseGate() {
     Object.keys(map).forEach(id => { const el = document.getElementById(id); if (el) el.value = map[id] || ''; });
   }
 
-  // Event listeners (blijven bestaan), maar inline onclicks zorgen voor extra zekerheid
+  // Event listeners (blijven bestaan) + inline onclicks als back-up
   const btnActivate = document.getElementById('activateLicBtn');
   const btnPaste = document.getElementById('pasteLicBtn');
   const btnRequest = document.getElementById('requestLicBtn');
@@ -106,7 +106,7 @@ function initLicenseGate() {
 
 // --- Fallbacks voor inline onclick-handlers ---
 function pasteFromClipboard(){ if (navigator.clipboard && document.getElementById('licCodeInput')) { navigator.clipboard.readText().then(t=>{ document.getElementById('licCodeInput').value = t || ''; }).catch(()=>{}); } }
-function requestLicenseEmail(){ const url = buildMailtoFromForm(); const a = document.getElementById('hiddenMailto'); if (a){ a.href = url; a.click(); } else { window.open(url, '_self'); } }
+function requestLicenseEmail(){ const url = buildMailtoFromForm(); const el = document.getElementById('requestLicBtn'); if (el) { el.setAttribute('href', url); el.removeAttribute('target'); } /* geen programmatic openen: browser navigeert op de klik */ }
 function saveApplicantDraft(){ buildMailtoFromForm(); const msg = document.getElementById('licMsg'); if (msg) { msg.textContent = 'Gegevens bewaard.'; msg.className = 'small hint-ok'; } }
 
 // ======= APP-INIT =======
