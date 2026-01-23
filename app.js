@@ -1,3 +1,5 @@
+// app.js - volledige vervanging met betrouwbare mailto-handler voor license request
+
 let APPDATA = null;
 
 // ======= LICENTIE-INSTELLINGEN =======
@@ -29,20 +31,25 @@ function updateLicenseUI() {
     else { banner.style.display = 'none'; }
     if (footer) footer.textContent = `Licentie actief: ${lic.code} — geldig t/m ${licenseExpiryText(lic)}.`;
   } else {
-    banner.style.display = 'block';
-    banner.textContent = 'Geen geldige licentie. Activeer met installatiecode of vraag een code aan.';
+    if (banner) { banner.style.display = 'block'; banner.textContent = 'Geen geldige licentie. Activeer met installatiecode of vraag een code aan.'; }
     if (footer) footer.textContent = 'Geen geldige licentie geactiveerd.';
   }
 }
 
 function showLicenseGate(show) { const gate = document.getElementById('licenseGate'); if (!gate) return; gate.hidden = !show; document.body.style.overflow = show ? 'hidden' : ''; }
-function validateCodeFormat(code) { const re = /^FSID-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/i; return re.test((code||'').trim()); }
+
+// Simpele validator (past bij het voorbeeldformaat); pas aan indien ander formaat gewenst
+function validateCodeFormat(code){
+  if (!code || typeof code !== 'string') return false;
+  // Example: FSID-ABCD-EFGH-JKLM (letters/numbers groups) - permissive
+  return /^FSID-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/i.test(code);
+}
 
 function activateLicenseFromInput() {
   const inp = document.getElementById('licCodeInput');
   const msg = document.getElementById('licMsg');
   const code = (inp.value||'').toUpperCase().trim();
-  if (!validateCodeFormat(code)) { msg.textContent = 'Ongeldig formaat. Gebruik bijv. FSID-ABCD-EFGH-JKLM'; msg.className = 'small hint-warn'; return; }
+  if (!validateCodeFormat(code)) { if (msg) { msg.textContent = 'Ongeldig formaat. Gebruik bijv. FSID-ABCD-EFGH-JKLM'; msg.className = 'small hint-warn'; } return; }
   const now = new Date(); const expires = new Date(now); expires.setFullYear(expires.getFullYear() + 1);
   const lic = { code, activatedAt: now.toISOString(), expiresAt: expires.toISOString() };
   writeLicense(lic);
@@ -51,6 +58,7 @@ function activateLicenseFromInput() {
   showLicenseGate(false);
 }
 
+// Betere buildMailto: gebruik plain recipient en encode subject/body
 function buildMailtoFromForm() {
   const f = {
     bedrijfsnaam: document.getElementById('licBedrijfsnaam').value || '',
@@ -66,8 +74,26 @@ function buildMailtoFromForm() {
   saveApplicant(f);
   const prijs = fmt.format(LICENSE_PRICE_EUR) + ' p/j (ex. btw)';
   const body = (
-`Beste licentiebeheer,\n\nGraag ontvang ik een installatiecode voor de "Inruilwaarde Fietsen" PWA.\n\nNAW-gegevens dealer:\n• Bedrijfsnaam: ${f.bedrijfsnaam}\n• Contactpersoon: ${f.contact}\n• E-mail: ${f.email}\n• Telefoon: ${f.tel}\n• Adres: ${f.adres}\n• Postcode: ${f.postcode}\n• Plaats: ${f.plaats}\n• KvK: ${f.kvk}\n• BTW: ${f.btw}\n\nIk ga akkoord met een 12-maanden licentie à ${prijs}.\n\nMet vriendelijke groet,\n${f.contact}`);
-  const mailto = `mailto:${encodeURIComponent(LICENSE_EMAIL_TO)}?subject=${LICENSE_SUBJECT}&body=${encodeURIComponent(body)}`;
+`Beste licentiebeheer,
+
+Graag ontvang ik een installatiecode voor de "Inruilwaarde Fietsen" PWA.
+
+NAW-gegevens dealer:
+• Bedrijfsnaam: ${f.bedrijfsnaam}
+• Contactpersoon: ${f.contact}
+• E-mail: ${f.email}
+• Telefoon: ${f.tel}
+• Adres: ${f.adres}
+• Postcode: ${f.postcode}
+• Plaats: ${f.plaats}
+• KvK: ${f.kvk}
+• BTW: ${f.btw}
+
+Ik ga akkoord met een 12-maanden licentie à ${prijs}.
+
+Met vriendelijke groet,
+${f.contact}`);
+  const mailto = `mailto:${LICENSE_EMAIL_TO}?subject=${LICENSE_SUBJECT}&body=${encodeURIComponent(body)}`;
   return mailto;
 }
 
@@ -106,24 +132,45 @@ function initLicenseGate() {
 
 // --- Fallbacks voor inline onclick-handlers ---
 function pasteFromClipboard(){ if (navigator.clipboard && document.getElementById('licCodeInput')) { navigator.clipboard.readText().then(t=>{ document.getElementById('licCodeInput').value = t || ''; }).catch(()=>{}); } }
-function requestLicenseEmail(){ const url = buildMailtoFromForm(); const el = document.getElementById('requestLicBtn'); if (el) { el.setAttribute('href', url); el.removeAttribute('target'); } /* geen programmatic openen: browser navigeert op de klik */ }
+function requestLicenseEmail(event){
+  const url = buildMailtoFromForm();
+  const el = document.getElementById('requestLicBtn');
+  if (el) {
+    el.setAttribute('href', url);
+    el.removeAttribute('target');
+  }
+  // Force navigation to the mailto within the user gesture so mail client reliably opens
+  try {
+    window.location.href = url;
+  } catch(e) {
+    // fallback: leave the href on the anchor so the browser will navigate when clicked
+  }
+  if (event && typeof event.preventDefault === 'function') event.preventDefault();
+  return false;
+}
 function saveApplicantDraft(){ buildMailtoFromForm(); const msg = document.getElementById('licMsg'); if (msg) { msg.textContent = 'Gegevens bewaard.'; msg.className = 'small hint-ok'; } }
 
 // ======= APP-INIT =======
 async function load() {
   initLicenseGate();
-  const res = await fetch('./data.json');
-  APPDATA = await res.json();
+  try {
+    const res = await fetch('./data.json');
+    APPDATA = await res.json();
+  } catch(e) {
+    APPDATA = { types: [], cond_factors: {}, accu_state_factors: {}, brands: {}, restwaarde: { zonderaccu: {} } };
+  }
   initUI();
 }
 
 function initUI(){
   const typeSel = document.getElementById('typeSelect');
-  APPDATA.types.forEach(t => { const opt = document.createElement('option'); opt.value = t.type; opt.textContent = t.type; typeSel.appendChild(opt); });
-  const states = Object.keys(APPDATA.cond_factors);
+  if (APPDATA && Array.isArray(APPDATA.types)) {
+    APPDATA.types.forEach(t => { const opt = document.createElement('option'); opt.value = t.type; opt.textContent = t.type; typeSel.appendChild(opt); });
+  }
+  const states = Object.keys(APPDATA.cond_factors || {});
   const stateSel = document.getElementById('stateSelect');
   states.forEach(s => { const o = document.createElement('option'); o.value=s; o.textContent=s; stateSel.appendChild(o); });
-  const accuStates = Object.keys(APPDATA.accu_state_factors);
+  const accuStates = Object.keys(APPDATA.accu_state_factors || {});
   const accuSel = document.getElementById('accuStateSelect');
   accuStates.forEach(s => { const o = document.createElement('option'); o.value=s; o.textContent=s; accuSel.appendChild(o); });
   document.getElementById('typeSelect').addEventListener('change', onTypeChange);
@@ -137,24 +184,26 @@ function initUI(){
 
 function onTypeChange(){
   const t = document.getElementById('typeSelect').value;
-  const brands = APPDATA.brands[t] || {};
   const brandSel = document.getElementById('brandSelect');
   brandSel.innerHTML = '';
-  Object.keys(brands).forEach(b => { const o = document.createElement('option'); o.value=b; o.textContent=b; brandSel.appendChild(o); });
-  if(!brandSel.value && brandSel.options.length>0) brandSel.value = brandSel.options[0].value;
-  const tcfg = APPDATA.types.find(x => x.type===t);
-  const hint = document.getElementById('refPriceHint');
-  hint.textContent = `Referentie nieuwprijs voor ${t}: € ${Math.round(tcfg.ref_price).toLocaleString('nl-NL')}`;
+  const tcfg = (APPDATA.types || []).find(x => x.type===t) || {};
+  const brands = (APPDATA.brands && APPDATA.brands[t]) ? Object.keys(APPDATA.brands[t]) : [];
+  brands.forEach(b => { const opt = document.createElement('option'); opt.value=b; opt.textContent=b; brandSel.appendChild(opt); });
+  // voeg default opt toe indien leeg
+  if (brandSel.children.length === 0) { const opt = document.createElement('option'); opt.value='Overig'; opt.textContent='Overig'; brandSel.appendChild(opt); }
+  // update referentiehint indien aanwezig
+  const refHint = document.getElementById('refPriceHint');
+  if (refHint) refHint.textContent = tcfg.ref_price ? `Referentie nieuwprijs: ${fmt.format(tcfg.ref_price)}` : '';
 }
 
 function updateAccuVisibility(){
-  const wrap = document.getElementById('accuStateWrap');
-  const t = document.getElementById('typeSelect').value;
-  const tcfg = APPDATA.types.find(x => x.type===t);
   const override = document.getElementById('hasAccuSelect').value;
+  const t = document.getElementById('typeSelect').value;
+  const tcfg = (APPDATA.types || []).find(x => x.type===t) || {};
+  const wrap = document.getElementById('accuStateWrap');
   let hasAccu = tcfg?.has_accu_default;
   if(override==='ja') hasAccu = true; else if(override==='nee') hasAccu = false;
-  wrap.style.display = hasAccu ? 'flex' : 'none';
+  wrap.style.display = hasAccu ? 'block' : 'none';
 }
 
 function calculate(){
@@ -164,23 +213,23 @@ function calculate(){
   const accuState = document.getElementById('accuStateSelect').value;
   const age = Math.max(0, Math.min(15, parseInt(document.getElementById('ageInput').value || '0', 10)));
   const priceInput = document.getElementById('priceInput').value;
-  const tcfg = APPDATA.types.find(x => x.type===t);
-  const price = priceInput ? parseFloat(priceInput) : tcfg.ref_price;
+  const tcfg = (APPDATA.types || []).find(x => x.type===t) || {};
+  const price = priceInput ? parseFloat(priceInput) : tcfg.ref_price || 0;
   const override = document.getElementById('hasAccuSelect').value;
   let hasAccu = tcfg?.has_accu_default;
   if(override==='ja') hasAccu = true; else if(override==='nee') hasAccu = false;
-  const ageFactor = APPDATA.restwaarde.zonderaccu[age] ?? 0;
-  const condFactor = APPDATA.cond_factors[state] ?? 1;
-  const accuFactor = hasAccu ? (APPDATA.accu_state_factors[accuState] ?? 1) : 1;
-  const brandFactor = (APPDATA.brands[t] && APPDATA.brands[t][brand]) ? APPDATA.brands[t][brand] : (APPDATA.brands[t]?.Overig ?? 0.85);
+  const ageFactor = (APPDATA.restwaarde && APPDATA.restwaarde.zonderaccu) ? APPDATA.restwaarde.zonderaccu[age] ?? 0 : 0;
+  const condFactor = APPDATA.cond_factors ? (APPDATA.cond_factors[state] ?? 1) : 1;
+  const accuFactor = hasAccu ? (APPDATA.accu_state_factors ? (APPDATA.accu_state_factors[accuState] ?? 1) : 1) : 1;
+  const brandFactor = (APPDATA.brands && APPDATA.brands[t] && APPDATA.brands[t][brand]) ? APPDATA.brands[t][brand] : (APPDATA.brands[t]?.Overig ?? 0.85);
   let value = price * ageFactor * condFactor * accuFactor * brandFactor;
   const rounded = Math.round(value);
   document.getElementById('resultValue').textContent = new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(rounded);
   document.getElementById('resultCard').hidden = false;
-  document.getElementById('factorAge').textContent = ageFactor.toLocaleString('nl-NL');
-  document.getElementById('factorState').textContent = condFactor.toLocaleString('nl-NL');
-  document.getElementById('factorAccu').textContent = accuFactor.toLocaleString('nl-NL');
-  document.getElementById('factorBrand').textContent = brandFactor.toLocaleString('nl-NL');
+  document.getElementById('factorAge').textContent = (ageFactor || 0).toLocaleString('nl-NL');
+  document.getElementById('factorState').textContent = (condFactor || 0).toLocaleString('nl-NL');
+  document.getElementById('factorAccu').textContent = (accuFactor || 0).toLocaleString('nl-NL');
+  document.getElementById('factorBrand').textContent = (brandFactor || 0).toLocaleString('nl-NL');
   document.getElementById('offerType').textContent = t;
   document.getElementById('offerBrand').textContent = brand;
   document.getElementById('offerState').textContent = state + (hasAccu?`, accustaat: ${accuState}`:'');
