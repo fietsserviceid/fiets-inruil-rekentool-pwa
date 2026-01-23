@@ -1,146 +1,124 @@
-<!DOCTYPE html>
-<html lang="nl">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Inruilwaarde Fietsen</title>
-  <link rel="manifest" href="./manifest.webmanifest">
-  <meta name="theme-color" content="#0078D7">
-  <link rel="stylesheet" href="./styles.css">
-</head>
-<body>
-  
-<script>
-  // ====== INSTELLING ======
-  const ACCESS_CODE = "+*#Fsid+*#";   // jouw wachtwoord
+let APPDATA = null;
+const fmt = new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
 
-  // ====== LOGICA ======
-  try {
-    // Check of wachtwoord in localStorage staat (blijft staan na sluiten/app-installatie)
-    if (localStorage.getItem("pwa_access_ok") === "1") {
-      // Toegang reeds verleend
-    } else {
-      const input = prompt("Voer wachtwoord in:");
-      if (input !== ACCESS_CODE) {
-        document.documentElement.innerHTML = `
-          <!doctype html><html lang="nl"><head><meta charset="utf-8"><title>Toegang geweigerd</title>
-          <meta name="viewport" content="width=device-width, initial-scale=1"></head>
-          <body style="font-family: system-ui, Segoe UI, Roboto; padding: 24px;">
-            <h2>Toegang geweigerd</h2>
-            <p>Onjuist wachtwoord. Vernieuw de pagina om het opnieuw te proberen.</p>
-          </body></html>`;
-        throw new Error("Blocked by password gate");
-      }
+async function load() {
+  const res = await fetch('./data.json');
+  APPDATA = await res.json();
+  initUI();
+}
 
-      // Bewaar toegang permanent
-      localStorage.setItem("pwa_access_ok", "1");
-    }
-  } catch (e) {
-    // stopt bewust
-  }
-</script>
+function initUI(){
+  const typeSel = document.getElementById('typeSelect');
+  APPDATA.types.forEach(t => {
+    const opt = document.createElement('option');
+    opt.value = t.type; opt.textContent = t.type; typeSel.appendChild(opt);
+  });
 
-<header>
-  <img src="logofietsserviceidtransparant-ezgif.com-resize.png"
-       alt="Fiets Service ID"
-       style="height:50px; width:auto; margin-right:12px; object-fit:contain;">
-  <h1>Inruilwaarde-calculator</h1>
-  <button id="installBtn" hidden>Installeer app</button>
-</header>
+  const states = Object.keys(APPDATA.cond_factors);
+  const stateSel = document.getElementById('stateSelect');
+  states.forEach(s => { const o = document.createElement('option'); o.value=s; o.textContent=s; stateSel.appendChild(o); });
 
-  <main>
-    <section class="card">
-      <h2>Invoer</h2>
-      <div class="grid">
-        <label>Type fiets
-          <select id="typeSelect"></select>
-        </label>
-        <label>Merk
-          <select id="brandSelect"></select>
-        </label>
-        <label>Staat
-          <select id="stateSelect"></select>
-        </label>
-        <label id="accuStateWrap">Accustaat
-          <select id="accuStateSelect"></select>
-        </label>
-        <label>Heeft accu?
-          <select id="hasAccuSelect">
-            <option value="auto" selected>Automatisch (per type)</option>
-            <option value="ja">Ja</option>
-            <option value="nee">Nee</option>
-          </select>
-        </label>
-        <label>Leeftijd (0–15 jaar)
-          <input id="ageInput" type="number" min="0" max="15" value="5" />
-        </label>
-        <label>Nieuwprijs / Aanschafprijs (€)
-          <input id="priceInput" type="number" min="0" step="1" placeholder="Laat leeg voor referentieprijs" />
-        </label>
-        <div class="hint" id="refPriceHint"></div>
-      </div>
-      <button id="calcBtn">Bereken inruilwaarde</button>
-    </section>
+  const accuStates = Object.keys(APPDATA.accu_state_factors);
+  const accuSel = document.getElementById('accuStateSelect');
+  accuStates.forEach(s => { const o = document.createElement('option'); o.value=s; o.textContent=s; accuSel.appendChild(o); });
 
-    <section class="card" id="resultCard" hidden>
-      <h2>Resultaat</h2>
-      <div class="result-line"><span>Inruilwaarde</span><strong><span id="resultValue">€ 0</span></strong></div>
-      <details>
-        <summary>Toelichting en factoren</summary>
-        <ul>
-          <li>Leeftijdsfactor: <span id="factorAge"></span></li>
-          <li>Conditiefactor: <span id="factorState"></span></li>
-          <li>Accufactor: <span id="factorAccu"></span></li>
-          <li>Merkfactor: <span id="factorBrand"></span></li>
-        </ul>
-      </details>
-      <div class="actions">
-        <button id="printOfferBtn">Maak offerte (print/pdf)</button>
-      </div>
-    </section>
+  document.getElementById('typeSelect').addEventListener('change', onTypeChange);
+  document.getElementById('hasAccuSelect').addEventListener('change', updateAccuVisibility);
+  document.getElementById('calcBtn').addEventListener('click', calculate);
+  document.getElementById('printOfferBtn').addEventListener('click', showOffer);
 
-    <section class="card" id="offerCard">
-      <h2>Offerte – Inruilvoorstel</h2>
-      <div class="offer-grid">
-        <label>Naam Klant: <input id="offerName" placeholder="Naam klant"></label>
-        <div class="kv">
-          <div>Type fiets:</div><div id="offerType"></div>
-          <div>Merk:</div><div id="offerBrand"></div>
-          <div>Staat:</div><div id="offerState"></div>
-          <div>Leeftijd:</div><div id="offerAge"></div>
-        </div>
-        <div class="offer-total">Inruilprijs: <strong id="offerTotal">€ 0</strong></div>
-        <p class="small">
-          Deze inruilwaarde is tot stand gekomen op basis van type fiets, leeftijd en algemene staat.
-          Dit voorstel is indicatief en onder voorbehoud van fysieke inspectie.
-        </p>
-        <div class="kv">
-          <div>Datum:</div><div id="offerDate"></div>
-        </div>
-        <div class="signatures">
-          <div>Handtekening klant: __________________________</div>
-          <div>Handtekening dealer: __________________________</div>
-        </div>
-        <div class="actions no-print"><button onclick="window.print()">Print / Exporteer PDF</button></div>
-      </div>
-    </section>
-  </main>
+  onTypeChange();
+  updateAccuVisibility();
+  document.getElementById('year').textContent = new Date().getFullYear();
+}
 
-<footer>
-  <small>© <span id="year"></span> Inruilwaarde Fietsen By FsiD BV</small><br>
-  <small style="font-size: 11px; color: #666;">
-    Disclaimer: Fiets Service ID is niet aansprakelijk voor de weergegeven inruilprijs.
-    Alle getoonde waarden zijn indicatief. De uiteindelijke inruilprijs wordt uitsluitend bepaald door de dealer.
-  </small>
-</footer>
+function onTypeChange(){
+  const t = document.getElementById('typeSelect').value;
+  const brands = APPDATA.brands[t] || {};
+  const brandSel = document.getElementById('brandSelect');
+  brandSel.innerHTML = '';
+  Object.keys(brands).forEach(b => {
+    const o = document.createElement('option'); o.value=b; o.textContent=b; brandSel.appendChild(o);
+  });
+  if(!brandSel.value && brandSel.options.length>0) brandSel.value = brandSel.options[0].value;
 
-  <script src="./app.js"></script>
-  <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js');
-      });
-    }
-  </script>
-</body>
-</html>
+  // ref price hint
+  const tcfg = APPDATA.types.find(x => x.type===t);
+  const hint = document.getElementById('refPriceHint');
+  hint.textContent = `Referentie nieuwprijs voor ${t}: â‚¬ ${Math.round(tcfg.ref_price).toLocaleString('nl-NL')}`;
+}
+
+function updateAccuVisibility(){
+  const wrap = document.getElementById('accuStateWrap');
+  const t = document.getElementById('typeSelect').value;
+  const tcfg = APPDATA.types.find(x => x.type===t);
+  const override = document.getElementById('hasAccuSelect').value; // auto/ja/nee
+  let hasAccu = tcfg?.has_accu_default;
+  if(override==='ja') hasAccu = true; else if(override==='nee') hasAccu = false;
+  wrap.style.display = hasAccu ? 'flex' : 'none';
+}
+
+function calculate(){
+  const t = document.getElementById('typeSelect').value;
+  const brand = document.getElementById('brandSelect').value;
+  const state = document.getElementById('stateSelect').value;
+  const accuState = document.getElementById('accuStateSelect').value;
+  const age = Math.max(0, Math.min(15, parseInt(document.getElementById('ageInput').value || '0', 10)));
+  const priceInput = document.getElementById('priceInput').value;
+
+  const tcfg = APPDATA.types.find(x => x.type===t);
+  const price = priceInput ? parseFloat(priceInput) : tcfg.ref_price;
+
+  // hasAccu decision
+  const override = document.getElementById('hasAccuSelect').value; // auto/ja/nee
+  let hasAccu = tcfg?.has_accu_default;
+  if(override==='ja') hasAccu = true; else if(override==='nee') hasAccu = false;
+
+  const ageFactor = APPDATA.restwaarde.zonderaccu[age] ?? 0; // leeftijdsfactor gebaseerd op basisfiets (zoals in Excel)
+  const condFactor = APPDATA.cond_factors[state] ?? 1;
+  const accuFactor = hasAccu ? (APPDATA.accu_state_factors[accuState] ?? 1) : 1;
+  const brandFactor = (APPDATA.brands[t] && APPDATA.brands[t][brand]) ? APPDATA.brands[t][brand] : (APPDATA.brands[t]?.Overig ?? 0.85);
+
+  let value = price * ageFactor * condFactor * accuFactor * brandFactor;
+  const rounded = Math.round(value);
+
+  document.getElementById('resultValue').textContent = fmt.format(rounded);
+  document.getElementById('resultCard').hidden = false;
+
+  document.getElementById('factorAge').textContent = ageFactor.toLocaleString('nl-NL');
+  document.getElementById('factorState').textContent = condFactor.toLocaleString('nl-NL');
+  document.getElementById('factorAccu').textContent = accuFactor.toLocaleString('nl-NL');
+  document.getElementById('factorBrand').textContent = brandFactor.toLocaleString('nl-NL');
+
+  // fill offer fields ready
+  document.getElementById('offerType').textContent = t;
+  document.getElementById('offerBrand').textContent = brand;
+  document.getElementById('offerState').textContent = state + (hasAccu?`, accustaat: ${accuState}`:'');
+  document.getElementById('offerAge').textContent = `${age} jaar`;
+  document.getElementById('offerTotal').textContent = fmt.format(rounded);
+  const d = new Date();
+  const pad=n=>String(n).padStart(2,'0');
+  document.getElementById('offerDate').textContent = `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()}`;
+}
+
+function showOffer(){
+  document.getElementById('offerCard').scrollIntoView({behavior:'smooth'});
+  document.getElementById('offerCard').classList.add('print');
+}
+
+// PWA install prompt
+let deferredPrompt;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  const btn = document.getElementById('installBtn');
+  btn.hidden = false;
+  btn.addEventListener('click', async () => {
+    btn.hidden = true;
+    deferredPrompt.prompt();
+    await deferredPrompt.userChoice;
+    deferredPrompt = null;
+  });
+});
+
+window.addEventListener('load', load);
