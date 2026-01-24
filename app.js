@@ -243,3 +243,9 @@ function showOffer(){ document.getElementById('offerCard').scrollIntoView({behav
 
 let deferredPrompt; window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferredPrompt = e; const btn = document.getElementById('installBtn'); btn.hidden = false; btn.addEventListener('click', async () => { btn.hidden = true; deferredPrompt.prompt(); await deferredPrompt.userChoice; deferredPrompt = null; }); });
 window.addEventListener('load', load);
+
+<script>
+// Zorg dat inline onclick ze kan vinden:
+window.activateLicenseFromInput = activateLicenseFromInput;
+window.pasteFromClipboard = pasteFromClipboard;  // als je die ook gebruikt
+</script>
